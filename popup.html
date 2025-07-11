@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ClipNest - Clipboard Manager</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header class="header">
+      <div class="header-content">
+        <h1 class="title">
+          <span class="icon">📋</span>
+          ClipNest
+        </h1>
+        <div class="header-actions">
+          <button id="searchToggle" class="icon-btn" title="Search">
+            <span class="icon">🔍</span>
+          </button>
+          <button id="settingsBtn" class="icon-btn" title="Settings">
+            <span class="icon">⚙️</span>
+          </button>
+        </div>
+      </div>
+      
+      <!-- Search Bar -->
+      <div id="searchBar" class="search-bar hidden">
+        <input type="text" id="searchInput" placeholder="Search clipboard history..." autocomplete="off">
+        <button id="clearSearch" class="clear-search">×</button>
+      </div>
+    </header>
+
+    <!-- Stats -->
+    <div class="stats">
+      <span id="clipCount" class="stat-item">0 clips</span>
+      <span class="stat-separator">•</span>
+      <span id="pinnedCount" class="stat-item">0 pinned</span>
+    </div>
+
+    <!-- Action Buttons -->
+    <div class="action-buttons">
+      <button id="clearAllBtn" class="action-btn danger" title="Clear all unpinned clips">
+        <span class="icon">🗑️</span>
+        Clear All
+      </button>
+      <button id="refreshBtn" class="action-btn" title="Refresh">
+        <span class="icon">🔄</span>
+        Refresh
+      </button>
+    </div>
+
+    <!-- Clipboard Items -->
+    <div class="clipboard-list">
+      <div id="loadingSpinner" class="loading">
+        <div class="spinner"></div>
+        <span>Loading clipboard history...</span>
+      </div>
+      
+      <div id="emptyState" class="empty-state hidden">
+        <div class="empty-icon">📋</div>
+        <h3>No clipboard items yet</h3>
+        <p>Copy some text to get started!</p>
+      </div>
+      
+      <div id="noResults" class="empty-state hidden">
+        <div class="empty-icon">🔍</div>
+        <h3>No results found</h3>
+        <p>Try adjusting your search terms</p>
+      </div>
+      
+      <div id="clipboardItems" class="clipboard-items">
+        <!-- Items will be dynamically inserted here -->
+      </div>
+    </div>
+
+    <!-- Settings Panel -->
+    <div id="settingsPanel" class="settings-panel hidden">
+      <div class="settings-header">
+        <h3>Settings</h3>
+        <button id="closeSettings" class="close-btn">×</button>
+      </div>
+      <div class="settings-content">
+        <div class="setting-item">
+          <label for="autoDelete">Auto-delete old clips (days):</label>
+          <select id="autoDelete">
+            <option value="7">7 days</option>
+            <option value="30" selected>30 days</option>
+            <option value="90">90 days</option>
+            <option value="0">Never</option>
+          </select>
+        </div>
+        <div class="setting-item">
+          <label for="maxItems">Maximum clips to store:</label>
+          <select id="maxItems">
+            <option value="100">100</option>
+            <option value="500">500</option>
+            <option value="1000" selected>1000</option>
+            <option value="2000">2000</option>
+          </select>
+        </div>
+        <div class="setting-item">
+          <button id="exportData" class="action-btn">Export Data</button>
+          <button id="importData" class="action-btn">Import Data</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Context Menu -->
+  <div id="contextMenu" class="context-menu hidden">
+    <div class="context-item" data-action="copy">📋 Copy</div>
+    <div class="context-item" data-action="pin">📌 Pin/Unpin</div>
+    <div class="context-item" data-action="delete">🗑️ Delete</div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
