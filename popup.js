@@ -84,17 +84,20 @@ class ClipNestPopup {
 
   async loadClipboardHistory() {
     try {
+      console.log('Loading clipboard history...');
       this.showLoading();
       
       const response = await chrome.runtime.sendMessage({ action: 'getClipboardHistory' });
+      console.log('Response from background:', response);
       
-      if (response.success) {
+      if (response && response.success) {
         this.clipboardHistory = response.data || [];
+        console.log('Loaded clipboard items:', this.clipboardHistory.length);
         this.filterHistory();
         this.updateStats();
         this.renderClipboardItems();
       } else {
-        console.error('Failed to load clipboard history:', response.error);
+        console.error('Failed to load clipboard history:', response?.error || 'No response');
         this.showEmptyState();
       }
     } catch (error) {

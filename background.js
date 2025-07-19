@@ -5,57 +5,181 @@ class ClipboardManager {
   constructor() {
     this.lastClipboardContent = '';
     this.isMonitoring = true;
+    this.offscreenCreated = false;
     this.init();
   }
 
   async init() {
     console.log('ClipNest background script initialized');
     
+    // Create offscreen document for clipboard access
+    await this.ensureOffscreenDocument();
+    
+    // Add some test data for debugging
+    await this.addTestData();
+    
     // Start monitoring clipboard changes
-    this.startClipboardMonitoring();
+    await this.startClipboardMonitoring();
     
     // Clean up old clips periodically
     this.scheduleCleanup();
     
-    // Listen for messages from content script and popup
+    // Listen for messages from content script, popup, and offscreen document
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       this.handleMessage(message, sender, sendResponse);
       return true; // Keep the message channel open for async responses
     });
+
+    // Handle extension startup
+    chrome.runtime.onStartup.addListener(() => {
+      this.init();
+    });
+
+    // Handle extension install
+    chrome.runtime.onInstalled.addListener(() => {
+      this.init();
+    });
+  }
+
+  async ensureOffscreenDocument() {
+    try {
+      // Check if offscreen document already exists
+      const clients = await chrome.runtime.getContexts({});
+      const offscreenClient = clients.find(client => client.contextType === 'OFFSCREEN_DOCUMENT');
+      
+      if (!offscreenClient) {
+        console.log('Creating offscreen document...');
+        try {
+          await chrome.offscreen.createDocument({
+            url: chrome.runtime.getURL('offscreen.html'),
+            reasons: ['CLIPBOARD'],
+            justification: 'Access clipboard for capturing and managing copied text'
+          });
+          this.offscreenCreated = true;
+          
+          // Give the offscreen document time to initialize
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          console.log('Offscreen document created successfully');
+        } catch (createError) {
+          console.error('Failed to create offscreen document:', createError);
+          this.offscreenCreated = false;
+          throw createError;
+        }
+      } else {
+        this.offscreenCreated = true;
+        console.log('Offscreen document already exists');
+      }
+    } catch (error) {
+      console.error('Error with offscreen document:', error);
+      console.error('Chrome offscreen API available:', !!chrome.offscreen);
+      this.offscreenCreated = false;
+      
+      // Don't throw - let extension continue with limited functionality
+      console.warn('Extension will run with limited clipboard access');
+    }
+  }
+
+  async addTestData() {
+    // Add some test clipboard items for debugging
+    try {
+      const testItems = [
+        {
+          id: Date.now().toString(),
+          text: 'https://example.com',
+          timestamp: new Date().toISOString(),
+          type: 'URL',
+          isPinned: false
+        },
+        {
+          id: (Date.now() + 1).toString(),
+          text: 'This is a test text copied to clipboard',
+          timestamp: new Date().toISOString(),
+          type: 'Text',
+          isPinned: false
+        }
+      ];
+      
+      await chrome.storage.local.set({ clipboardHistory: testItems });
+      console.log('Test data added:', testItems.length, 'items');
+    } catch (error) {
+      console.error('Error adding test data:', error);
+    }
   }
 
   async startClipboardMonitoring() {
-    // Check clipboard every 500ms
-    setInterval(async () => {
-      if (this.isMonitoring) {
-        await this.checkClipboard();
+    if (!this.offscreenCreated) {
+      console.log('Offscreen document not ready, attempting to create...');
+      await this.ensureOffscreenDocument();
+      
+      if (!this.offscreenCreated) {
+        console.warn('Cannot start clipboard monitoring - offscreen document unavailable');
+        return;
       }
-    }, 500);
+    }
+
+    try {
+      // Start monitoring via offscreen document
+      const response = await chrome.runtime.sendMessage({
+        action: 'startMonitoring'
+      });
+      
+      if (response && response.success) {
+        console.log('Clipboard monitoring started via offscreen document');
+      } else {
+        console.error('Failed to start monitoring:', response?.error);
+      }
+      
+      // Also get initial clipboard content
+      await this.checkInitialClipboard();
+      
+    } catch (error) {
+      console.error('Error starting clipboard monitoring:', error);
+      console.error('Will retry in 5 seconds...');
+      
+      // Retry after delay
+      setTimeout(() => {
+        this.startClipboardMonitoring();
+      }, 5000);
+    }
   }
 
-  async checkClipboard() {
+  async checkInitialClipboard() {
     try {
-      // Read from clipboard
-      const clipboardText = await navigator.clipboard.readText();
+      console.log('Checking initial clipboard content...');
+      const response = await chrome.runtime.sendMessage({
+        action: 'readClipboard'
+      });
       
-      if (clipboardText && clipboardText !== this.lastClipboardContent) {
-        this.lastClipboardContent = clipboardText;
-        await this.saveClipboardItem(clipboardText);
+      if (response && response.success && response.text) {
+        console.log('Initial clipboard content detected, length:', response.text.length);
+        await this.saveClipboardItem(response.text);
+      } else if (response && !response.success) {
+        console.warn('Could not read initial clipboard:', response.error);
+      } else {
+        console.log('No initial clipboard content');
       }
     } catch (error) {
-      // Clipboard access might be restricted, this is expected in background
-      console.log('Clipboard check failed (expected in background):', error.message);
+      console.warn('Could not check initial clipboard:', error.message);
     }
   }
 
   async saveClipboardItem(text) {
     if (!text || text.trim().length === 0) return;
+    
+    const trimmedText = text.trim();
+    
+    // Avoid saving the same content repeatedly
+    if (trimmedText === this.lastClipboardContent) {
+      return;
+    }
+    
+    this.lastClipboardContent = trimmedText;
 
     const clipItem = {
       id: Date.now().toString(),
-      text: text.trim(),
+      text: trimmedText,
       timestamp: new Date().toISOString(),
-      type: this.detectContentType(text),
+      type: this.detectContentType(trimmedText),
       isPinned: false
     };
 
@@ -161,7 +285,17 @@ class ClipboardManager {
 
         case 'clipboardCaptured':
           // Message from content script when copy event detected
-          await this.saveClipboardItem(message.text);
+          if (this.isMonitoring) {
+            await this.saveClipboardItem(message.text);
+          }
+          sendResponse({ success: true });
+          break;
+
+        case 'clipboardChanged':
+          // Message from offscreen document when clipboard changes
+          if (this.isMonitoring) {
+            await this.saveClipboardItem(message.text);
+          }
           sendResponse({ success: true });
           break;
 
@@ -179,20 +313,27 @@ class ClipboardManager {
       // Temporarily disable monitoring to prevent duplicate
       this.isMonitoring = false;
       
-      // For background script, we need to use a different approach
-      // We'll send a message to the active tab to perform the copy
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (tab) {
-        await chrome.tabs.sendMessage(tab.id, {
-          action: 'copyText',
+      // Use offscreen document for clipboard writing
+      if (this.offscreenCreated) {
+        await chrome.runtime.sendMessage({
+          action: 'writeClipboard',
           text: text
         });
+      } else {
+        // Fallback: send a message to the active tab to perform the copy
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (tab) {
+          await chrome.tabs.sendMessage(tab.id, {
+            action: 'copyText',
+            text: text
+          });
+        }
       }
       
       // Re-enable monitoring after a short delay
       setTimeout(() => {
         this.isMonitoring = true;
-      }, 1000);
+      }, 2000);
       
     } catch (error) {
       console.error('Error copying to clipboard:', error);
